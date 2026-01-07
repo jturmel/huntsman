@@ -15,9 +15,14 @@ import (
 	"golang.org/x/net/html"
 )
 
-var baseStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.NormalBorder()).
-	BorderForeground(lipgloss.Color("240"))
+var (
+	focusedStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("205"))
+	blurredStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240"))
+)
 
 type crawlResult struct {
 	url    string
@@ -38,10 +43,11 @@ type model struct {
 
 func initialModel() model {
 	ti := textinput.New()
-	ti.Placeholder = "https://example.com"
+	ti.Placeholder = "Enter URL to spider..."
 	ti.Focus()
 	ti.CharLimit = 156
-	ti.Width = 60
+	ti.Width = 96
+	ti.Prompt = " "
 
 	columns := []table.Column{
 		{Title: "URL", Width: 60},
@@ -180,7 +186,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc", "ctrl+c", "q":
 			return m, tea.Quit
-		case "tab":
+		case "tab", "shift+tab":
 			if m.textInput.Focused() {
 				m.textInput.Blur()
 				m.table.Focus()
@@ -228,10 +234,45 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	var inputView, tableView string
+
+	if m.textInput.Focused() {
+		inputView = focusedStyle.Render(m.textInput.View())
+	} else {
+		inputView = blurredStyle.Render(m.textInput.View())
+	}
+
+	numResults := len(m.table.Rows())
+	headerText := fmt.Sprintf(" Results: %d", numResults)
+
+	// Create a style for the header to match the table width
+	headerStyle := lipgloss.NewStyle().
+		Width(98).
+		Border(lipgloss.NormalBorder(), true, true, false, true)
+
+	if m.table.Focused() {
+		headerStyle = headerStyle.BorderForeground(lipgloss.Color("205"))
+		// Adjust table style to remove top border since header provides it
+		tableView = focusedStyle.Copy().
+			Border(lipgloss.NormalBorder(), false, true, true, true).
+			BorderForeground(lipgloss.Color("205")).
+			Render(m.table.View())
+	} else {
+		headerStyle = headerStyle.BorderForeground(lipgloss.Color("240"))
+		// Adjust table style to remove top border since header provides it
+		tableView = blurredStyle.Copy().
+			Border(lipgloss.NormalBorder(), false, true, true, true).
+			BorderForeground(lipgloss.Color("240")).
+			Render(m.table.View())
+	}
+
+	headerView := headerStyle.Render(headerText)
+
 	return fmt.Sprintf(
-		"Enter URL to spider:\n\n%s\n\nResults:\n\n%s\n\n%s",
-		m.textInput.View(),
-		baseStyle.Render(m.table.View()),
+		"%s\n%s\n%s\n\n%s",
+		inputView,
+		headerView,
+		tableView,
 		"Tab: switch focus • Enter: start crawl • Arrows: scroll • q: quit",
 	)
 }
