@@ -1,0 +1,66 @@
+name: Build Binary on Release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and Upload Binary
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        os: [linux, darwin]
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Build Binary
+        run: make build-${{ matrix.os }}-${{ matrix.arch }}
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            huntsman-${{ matrix.os }}-${{ matrix.arch }}
+
+  release-info:
+    name: Update Release Info
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Update Release Body
+        uses: softprops/action-gh-release@v1
+        with:
+          body: |
+            ${{ github.event.release.body }}
+
+            ## Quick Install (Recommended)
+
+            To install the **latest** version of `huntsman`:
+            ```bash
+            curl -sL https://github.com/jturmel/huntsman/releases/latest/download/install.sh | bash
+            ```
+
+            To install **this specific version** (${{ github.ref_name }}):
+            ```bash
+            curl -sL https://github.com/jturmel/huntsman/releases/download/${{ github.ref_name }}/install.sh | VERSION=${{ github.ref_name }} bash
+            ```
+
+            The script will automatically detect your OS and architecture, download the binary, and set it up for you.
+          files: |
+            install.sh

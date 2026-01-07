@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -73,7 +75,7 @@ func initialModel() model {
 		Bold(false)
 	s.Selected = s.Selected.
 		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
+		Background(lipgloss.Color("#bd93f9")).
 		Bold(false)
 	t.SetStyles(s)
 
@@ -218,6 +220,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.visited[target] = true
 					return m, crawl(target, m.baseUrl)
 				}
+			} else if m.table.Focused() {
+				selectedRow := m.table.SelectedRow()
+				if len(selectedRow) > 0 {
+					url := selectedRow[0]
+					openURL(url)
+				}
 			}
 		}
 	}
@@ -268,13 +276,38 @@ func (m model) View() string {
 
 	headerView := headerStyle.Render(headerText)
 
+	var helpView string
+	if m.textInput.Focused() {
+		helpView = "Tab: focus table • Enter: start crawl • q: quit"
+	} else {
+		helpView = "Tab: focus input • Enter: open URL • Arrows/j/k: scroll • q: quit"
+	}
+
 	return fmt.Sprintf(
 		"%s\n%s\n%s\n\n%s",
 		inputView,
 		headerView,
 		tableView,
-		"Tab: switch focus • Enter: start crawl • Arrows: scroll • q: quit",
+		helpView,
 	)
+}
+
+func openURL(u string) {
+	var cmd string
+	var args []string
+
+	switch runtime.GOOS {
+	case "windows":
+		cmd = "rundll32"
+		args = []string{"url.dll,FileProtocolHandler", u}
+	case "darwin":
+		cmd = "open"
+		args = []string{u}
+	default: // "linux", "freebsd", "openbsd", "netbsd"
+		cmd = "xdg-open"
+		args = []string{u}
+	}
+	_ = exec.Command(cmd, args...).Start()
 }
 
 func main() {
