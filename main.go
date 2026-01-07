@@ -17,10 +17,10 @@ import (
 
 var (
 	focusedStyle = lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("205"))
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#bd93f9"))
 	blurredStyle = lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
+		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240"))
 )
 
@@ -61,7 +61,7 @@ func initialModel() model {
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithRows(rows),
-		table.WithFocused(true),
+		table.WithFocused(false),
 		table.WithHeight(15),
 	)
 
@@ -248,20 +248,20 @@ func (m model) View() string {
 	// Create a style for the header to match the table width
 	headerStyle := lipgloss.NewStyle().
 		Width(98).
-		Border(lipgloss.NormalBorder(), true, true, false, true)
+		Border(lipgloss.RoundedBorder(), true, true, false, true)
 
 	if m.table.Focused() {
-		headerStyle = headerStyle.BorderForeground(lipgloss.Color("205"))
+		headerStyle = headerStyle.BorderForeground(lipgloss.Color("#bd93f9"))
 		// Adjust table style to remove top border since header provides it
 		tableView = focusedStyle.Copy().
-			Border(lipgloss.NormalBorder(), false, true, true, true).
-			BorderForeground(lipgloss.Color("205")).
+			Border(lipgloss.RoundedBorder(), false, true, true, true).
+			BorderForeground(lipgloss.Color("#bd93f9")).
 			Render(m.table.View())
 	} else {
 		headerStyle = headerStyle.BorderForeground(lipgloss.Color("240"))
 		// Adjust table style to remove top border since header provides it
 		tableView = blurredStyle.Copy().
-			Border(lipgloss.NormalBorder(), false, true, true, true).
+			Border(lipgloss.RoundedBorder(), false, true, true, true).
 			BorderForeground(lipgloss.Color("240")).
 			Render(m.table.View())
 	}
