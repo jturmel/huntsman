@@ -41,6 +41,8 @@ type model struct {
 	table     table.Model
 	visited   map[string]bool
 	baseUrl   *url.URL
+	width     int
+	height    int
 }
 
 func initialModel() model {
@@ -72,11 +74,14 @@ func initialModel() model {
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("240")).
 		BorderBottom(true).
-		Bold(false)
+		Bold(false).
+		Padding(0, 1)
 	s.Selected = s.Selected.
 		Foreground(lipgloss.Color("229")).
 		Background(lipgloss.Color("#bd93f9")).
-		Bold(false)
+		Bold(false).
+		Padding(0, 1)
+	s.Cell = s.Cell.Padding(0, 1)
 	t.SetStyles(s)
 
 	return model{
@@ -165,6 +170,53 @@ func extractLinks(body io.Reader, currentUrl string, baseUrl *url.URL) []string 
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+		// Update table width
+		// We subtract 3 characters for the borders and a safety margin to prevent wrapping
+		// totalWidth = columnsWidths + (numColumns - 1)
+		// We want totalWidth to be around m.width - 3
+		targetTableWidth := m.width - 3
+		if targetTableWidth < 40 {
+			targetTableWidth = 40
+		}
+
+		// Adjust columns proportionally
+		// URL gets the most space
+		statusWidth := 10
+		typeWidth := 10
+		sizeWidth := 10
+		// bubbles/table adds 1 space between columns.
+		// We have 4 columns, so 3 spaces.
+		// Additionally, each column now has 1 space padding on left and right (total 2 per column).
+		// 4 columns * 2 padding = 8 spaces of padding.
+		urlWidth := targetTableWidth - statusWidth - typeWidth - sizeWidth - 3 - 8
+
+		if urlWidth < 10 {
+			urlWidth = 10
+		}
+
+		columns := []table.Column{
+			{Title: "URL", Width: urlWidth},
+			{Title: "Status", Width: statusWidth},
+			{Title: "Type", Width: typeWidth},
+			{Title: "Size", Width: sizeWidth},
+		}
+		m.table.SetColumns(columns)
+
+		// Adjust input width to match the table's total width
+		// Table total width = sum(column widths) + spaces between columns + padding
+		actualTableWidth := urlWidth + statusWidth + typeWidth + sizeWidth + 3 + 8
+		m.textInput.Width = actualTableWidth - 1 // -1 for prompt space
+
+		// Adjust table height
+		// Total height minus input (3 lines), header (3 lines), help (1 line) and some buffer
+		m.table.SetHeight(m.height - 10)
+
+		return m, nil
+
 	case crawlResult:
 		// Mark as visited
 		m.visited[msg.url] = true
@@ -244,37 +296,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var inputView, tableView string
 
-	if m.textInput.Focused() {
-		inputView = focusedStyle.Render(m.textInput.View())
-	} else {
-		inputView = blurredStyle.Render(m.textInput.View())
-	}
-
 	numResults := len(m.table.Rows())
 	headerText := fmt.Sprintf(" Results: %d", numResults)
 
-	// Create a style for the header to match the table width
+	// Use the actual rendered width of the table to ensure alignment
+	tableViewContent := m.table.View()
+	contentWidth := lipgloss.Width(tableViewContent)
+	if contentWidth == 0 {
+		// Fallback to manual calculation if table is not yet rendered or has no columns
+		columns := m.table.Columns()
+		for i, col := range columns {
+			contentWidth += col.Width + 2 // width + left/right padding
+			if i < len(columns)-1 {
+				contentWidth++ // space between columns
+			}
+		}
+	}
+
 	headerStyle := lipgloss.NewStyle().
-		Width(98).
+		Width(contentWidth).
 		Border(lipgloss.RoundedBorder(), true, true, false, true)
 
 	if m.table.Focused() {
 		headerStyle = headerStyle.BorderForeground(lipgloss.Color("#bd93f9"))
 		// Adjust table style to remove top border since header provides it
 		tableView = focusedStyle.Copy().
+			Width(contentWidth).
 			Border(lipgloss.RoundedBorder(), false, true, true, true).
 			BorderForeground(lipgloss.Color("#bd93f9")).
-			Render(m.table.View())
+			Render(tableViewContent)
 	} else {
 		headerStyle = headerStyle.BorderForeground(lipgloss.Color("240"))
 		// Adjust table style to remove top border since header provides it
 		tableView = blurredStyle.Copy().
+			Width(contentWidth).
 			Border(lipgloss.RoundedBorder(), false, true, true, true).
 			BorderForeground(lipgloss.Color("240")).
-			Render(m.table.View())
+			Render(tableViewContent)
 	}
 
 	headerView := headerStyle.Render(headerText)
+
+	// Ensure input view also respects width
+	inputStyle := blurredStyle.Copy().
+		Width(contentWidth)
+	if m.textInput.Focused() {
+		inputStyle = focusedStyle.Copy().
+			Width(contentWidth)
+	}
+	inputView = inputStyle.Render(m.textInput.View())
 
 	var helpView string
 	if m.textInput.Focused() {
@@ -283,12 +353,14 @@ func (m model) View() string {
 		helpView = "Tab: focus input • Enter: open URL • Arrows/j/k: scroll • q: quit"
 	}
 
-	return fmt.Sprintf(
-		"%s\n%s\n%s\n\n%s",
+	helpStyle := lipgloss.NewStyle().PaddingLeft(1)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
 		inputView,
 		headerView,
 		tableView,
-		helpView,
+		helpStyle.Render(helpView),
 	)
 }
 
