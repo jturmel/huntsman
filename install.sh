@@ -73,7 +73,13 @@ download_from_release() {
         exit 1
     fi
     echo "Downloading $file from release $VERSION..."
-    curl -sL --fail "https://github.com/$REPO/releases/download/$VERSION/$file" -o "$BINARY_NAME" || {
+    local download_url
+    if [ "$VERSION" = "latest" ]; then
+        download_url="https://github.com/$REPO/releases/latest/download/$file"
+    else
+        download_url="https://github.com/$REPO/releases/download/$VERSION/$file"
+    fi
+    curl -sL --fail "$download_url" -o "$BINARY_NAME" || {
         echo "Error: Failed to download $file. It might not be available in the $VERSION release."
         exit 1
     }
