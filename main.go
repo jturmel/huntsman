@@ -21,12 +21,14 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -41,11 +43,11 @@ import (
 
 var (
 	focusedStyle = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#bd93f9"))
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#bd93f9"))
 	blurredStyle = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240"))
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240"))
 
 	maxConcurrency = 10
 )
@@ -173,7 +175,11 @@ type model struct {
 	height    int
 	crawler   *crawler
 	results   chan crawlResult
+	message   string
+	msgTimer  *time.Timer
 }
+
+type clearMsg struct{}
 
 func initialModel() model {
 	ti := textinput.New()
@@ -320,6 +326,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
+	case clearMsg:
+		m.message = ""
+		return m, nil
+
 	case crawlResult:
 		// Mark as visited in UI
 		m.visited[msg.url] = true
@@ -396,6 +406,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					openURL(url)
 				}
 			}
+		case "w":
+			if m.table.Focused() {
+				filename, err := m.exportToCSV()
+				if err != nil {
+					m.message = "Error exporting: " + err.Error()
+				} else {
+					m.message = "Exported: " + filename
+				}
+				return m, tea.Tick(time.Second*3, func(t time.Time) tea.Msg {
+					return clearMsg{}
+				})
+			}
 		}
 	}
 
@@ -415,6 +437,9 @@ func (m model) View() string {
 
 	numResults := len(m.table.Rows())
 	headerText := fmt.Sprintf(" Results: %d", numResults)
+	if m.message != "" {
+		headerText += fmt.Sprintf(" • %s", m.message)
+	}
 
 	// Use the actual rendered width of the table to ensure alignment
 	tableViewContent := m.table.View()
@@ -467,7 +492,7 @@ func (m model) View() string {
 	if m.textInput.Focused() {
 		helpView = "Tab: focus table • Enter: start crawl • q: quit"
 	} else {
-		helpView = "Tab: focus input • Enter: open URL • Arrows/j/k: scroll • q: quit"
+		helpView = "Tab: focus input • Enter: open URL • w: export • Arrows/j/k: scroll • q: quit"
 	}
 
 	helpStyle := lipgloss.NewStyle().PaddingLeft(1)
@@ -479,6 +504,48 @@ func (m model) View() string {
 		tableView,
 		helpStyle.Render(helpView),
 	)
+}
+
+func (m model) exportToCSV() (string, error) {
+	if m.baseUrl == nil {
+		return "", nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	downloadsDir := filepath.Join(home, "Downloads")
+	// If Downloads doesn't exist (unlikely but possible on some minimal setups), fallback to Home
+	if _, err := os.Stat(downloadsDir); os.IsNotExist(err) {
+		downloadsDir = home
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	domain := strings.ReplaceAll(m.baseUrl.Host, ".", "-")
+	filename := fmt.Sprintf("%s_%s.csv", timestamp, domain)
+	filePath := filepath.Join(downloadsDir, filename)
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Header
+	_ = writer.Write([]string{"URL", "Status", "Type", "Size"})
+
+	for _, row := range m.table.Rows() {
+		if err := writer.Write(row); err != nil {
+			return "", err
+		}
+	}
+
+	return filename, nil
 }
 
 func openURL(u string) {
