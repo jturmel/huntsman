@@ -3,15 +3,20 @@
 # Exit on error
 set -e
 
-# Define paths
-INSTALL_DIR="$HOME/.local/bin"
-BINARY_NAME="huntsman"
-REPO="jturmel/huntsman"
-VERSION="${VERSION:-latest}"
-
 # Detect OS and Architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
+
+# Define paths based on OS
+if [ "$OS" = "darwin" ]; then
+    INSTALL_DIR="/usr/local/bin"
+else
+    INSTALL_DIR="$HOME/.local/bin"
+fi
+
+BINARY_NAME="huntsman"
+REPO="jturmel/huntsman"
+VERSION="${VERSION:-latest}"
 
 case $ARCH in
     x86_64)
@@ -57,9 +62,13 @@ download_from_release() {
     }
 }
 
-# 1. Setup directory in ~/.local/bin
+# 1. Setup directory
 echo "Creating directory $INSTALL_DIR..."
-mkdir -p "$INSTALL_DIR"
+if [ "$OS" = "darwin" ]; then
+    sudo mkdir -p "$INSTALL_DIR"
+else
+    mkdir -p "$INSTALL_DIR"
+fi
 
 # 2. Get binary
 if [ -f "$ASSET_NAME" ]; then
@@ -79,8 +88,13 @@ fi
 
 # 3. Copy the binary
 echo "Copying binary to $INSTALL_DIR..."
-cp "$BINARY_NAME" "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/$BINARY_NAME"
+if [ "$OS" = "darwin" ]; then
+    sudo cp "$BINARY_NAME" "$INSTALL_DIR/"
+    sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
+else
+    cp "$BINARY_NAME" "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/$BINARY_NAME"
+fi
 rm "$BINARY_NAME"
 
 echo "Installation complete!"

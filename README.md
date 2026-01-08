@@ -10,13 +10,13 @@ Installation
 
 ### Quick Install (Recommended)
 
-To install the latest version of `huntsman` to `~/.local/bin`:
+To install the latest version of `huntsman` (to `/usr/local/bin` on macOS or `~/.local/bin` on Linux):
 
 ```bash
 curl -sL https://github.com/jturmel/huntsman/releases/latest/download/install.sh | bash
 ```
 
-The script automatically detects your OS and architecture. Make sure `~/.local/bin` is in your `PATH`.
+The script automatically detects your OS and architecture. Make sure the installation directory (`/usr/local/bin` on macOS or `~/.local/bin` on Linux) is in your `PATH`.
 
 ### Manual Install (From Source)
 
@@ -26,7 +26,9 @@ If you have Go installed, you can build and install manually:
 git clone https://github.com/jturmel/huntsman.git
 cd huntsman
 make build
-cp huntsman ~/.local/bin/
+cp huntsman /usr/local/bin/ # macOS
+# OR
+cp huntsman ~/.local/bin/  # Linux
 ```
 
 Usage
