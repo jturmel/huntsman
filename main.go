@@ -34,6 +34,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -43,11 +44,11 @@ import (
 
 var (
 	focusedStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#bd93f9"))
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#bd93f9"))
 	blurredStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240"))
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240"))
 
 	maxConcurrency = 10
 )
@@ -68,6 +69,7 @@ type crawler struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
+	active      sync.WaitGroup
 	concurrency int
 }
 
@@ -76,7 +78,7 @@ func newCrawler(baseUrl *url.URL, results chan crawlResult, concurrency int) *cr
 	return &crawler{
 		baseUrl:     baseUrl,
 		results:     results,
-		jobs:        make(chan string, 1000),
+		jobs:        make(chan string, 10000),
 		ctx:         ctx,
 		cancel:      cancel,
 		concurrency: concurrency,
@@ -88,6 +90,18 @@ func (c *crawler) start() {
 		c.wg.Add(1)
 		go c.worker()
 	}
+
+	// Monitor for completion
+	go func() {
+		c.active.Wait()
+		// No more active jobs, close jobs to signal workers to stop if they are waiting for jobs
+		// Actually, we should probably send a signal that we are done.
+		// Since we don't want to close results channel (the model might still be processing it),
+		// we can use a special result or another way to signal.
+		// Given the current structure, let's just send a nil-like result or a special type if possible.
+		// But wait, crawlResult is a struct.
+		c.results <- crawlResult{url: "__FINISHED__"}
+	}()
 }
 
 func (c *crawler) stop() {
@@ -109,22 +123,25 @@ func (c *crawler) worker() {
 
 			select {
 			case <-c.ctx.Done():
+				c.active.Done()
 				return
 			case c.results <- res:
 			}
 
 			for _, link := range res.links {
 				if _, loaded := c.visited.LoadOrStore(link, true); !loaded {
+					c.active.Add(1)
 					select {
 					case <-c.ctx.Done():
+						c.active.Done()
 						return
 					case c.jobs <- link:
 					default:
-						// If jobs channel is full, we might want to log or handle it
-						// For now, we'll just skip to avoid deadlocks in this simple implementation
+						c.active.Done()
 					}
 				}
 			}
+			c.active.Done()
 		}
 	}
 }
@@ -147,11 +164,29 @@ func (c *crawler) doCrawl(targetUrl string) crawlResult {
 	contentType := resp.Header.Get("Content-Type")
 	kind := "Other"
 	if strings.Contains(contentType, "text/html") {
-		kind = "HTML"
+		kind = "document"
+	} else if strings.Contains(contentType, "text/css") {
+		kind = "stylesheet"
+	} else if strings.Contains(contentType, "javascript") {
+		kind = "script"
+	} else if strings.Contains(contentType, "font") {
+		kind = "font"
+	} else if strings.Contains(contentType, "image/png") {
+		kind = "png"
+	} else if strings.Contains(contentType, "image/gif") {
+		kind = "gif"
+	} else if strings.Contains(contentType, "image/jpeg") {
+		kind = "jpeg"
+	} else if strings.Contains(contentType, "image/svg+xml") {
+		kind = "svg+xml"
+	} else if strings.Contains(contentType, "x-icon") || strings.Contains(contentType, "vnd.microsoft.icon") {
+		kind = "x-icon"
+	} else if strings.Contains(contentType, "manifest+json") {
+		kind = "manifest"
 	}
 
 	var links []string
-	if kind == "HTML" {
+	if kind == "document" {
 		links = extractLinks(strings.NewReader(string(bodyBytes)), targetUrl, c.baseUrl)
 	}
 
@@ -168,6 +203,7 @@ type errorMsg error
 
 type model struct {
 	textInput textinput.Model
+	spinner   spinner.Model
 	table     table.Model
 	visited   map[string]bool
 	baseUrl   *url.URL
@@ -177,9 +213,12 @@ type model struct {
 	results   chan crawlResult
 	message   string
 	msgTimer  *time.Timer
+	crawling  bool
+	finished  bool
 }
 
 type clearMsg struct{}
+type crawlFinishedMsg struct{}
 
 func initialModel() model {
 	ti := textinput.New()
@@ -189,11 +228,18 @@ func initialModel() model {
 	ti.Width = 96
 	ti.Prompt = " "
 
+	sp := spinner.New()
+	sp.Spinner = spinner.Spinner{
+		Frames: []string{"∙∙∙∙∙∙", "●∙∙∙∙∙", "∙●∙∙∙∙", "∙∙●∙∙∙", "∙∙∙●∙∙", "∙∙∙∙●∙", "∙∙∙∙∙●"},
+		FPS:    time.Second / 10,
+	}
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9"))
+
 	columns := []table.Column{
 		{Title: "URL", Width: 60},
 		{Title: "Status", Width: 10},
 		{Title: "Type", Width: 10},
-		{Title: "Size", Width: 10},
+		{Title: "      Size", Width: 10},
 	}
 
 	rows := []table.Row{}
@@ -204,6 +250,8 @@ func initialModel() model {
 		table.WithFocused(false),
 		table.WithHeight(15),
 	)
+	t.KeyMap.LineUp.SetKeys("up", "k")
+	t.KeyMap.LineDown.SetKeys("down", "j")
 
 	s := table.DefaultStyles()
 	s.Header = s.Header.
@@ -215,16 +263,16 @@ func initialModel() model {
 	s.Selected = s.Selected.
 		Foreground(lipgloss.Color("229")).
 		Background(lipgloss.Color("#bd93f9")).
-		Bold(false).
-		Padding(0, 1)
+		Bold(false)
 	s.Cell = s.Cell.Padding(0, 1)
 	t.SetStyles(s)
 
 	return model{
 		textInput: ti,
+		spinner:   sp,
 		table:     t,
 		visited:   make(map[string]bool),
-		results:   make(chan crawlResult, 100),
+		results:   make(chan crawlResult, 10000),
 	}
 }
 
@@ -311,7 +359,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "URL", Width: urlWidth},
 			{Title: "Status", Width: statusWidth},
 			{Title: "Type", Width: typeWidth},
-			{Title: "Size", Width: sizeWidth},
+			{Title: "      Size", Width: sizeWidth},
 		}
 		m.table.SetColumns(columns)
 
@@ -331,15 +379,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case crawlResult:
+		if msg.url == "__FINISHED__" {
+			m.crawling = false
+			m.finished = true
+			return m, nil
+		}
 		// Mark as visited in UI
 		m.visited[msg.url] = true
 
 		// Add to table
 		rows := m.table.Rows()
-		rows = append(rows, table.Row{msg.url, msg.status, msg.kind, fmt.Sprintf("%d", msg.size)})
+		sizeKB := float64(msg.size) / 1024.0
+		sizeStr := fmt.Sprintf("%.1f kB", sizeKB)
+
+		// Right align the size column
+		// The column width is 10 (or sizeWidth in Update)
+		// We subtract 2 from the width because the table component adds padding(0,1) to each cell
+		// which means there is 1 space on each side.
+		// However, the internal logic of bubbles/table might handle this differently.
+		// Let's look at how the columns are defined.
+		// sizeWidth is 10.
+		formattedSize := fmt.Sprintf("%10s", sizeStr)
+
+		rows = append(rows, table.Row{msg.url, msg.status, msg.kind, formattedSize})
 		m.table.SetRows(rows)
 
 		return m, m.waitForResults()
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -394,10 +464,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					m.crawler = newCrawler(m.baseUrl, m.results, concurrency)
 					m.crawler.visited.Store(target, true)
+					m.crawler.active.Add(1)
 					m.crawler.start()
 					m.crawler.jobs <- target
 
-					return m, m.waitForResults()
+					m.crawling = true
+					m.finished = false
+
+					return m, tea.Batch(
+						m.waitForResults(),
+						m.spinner.Tick,
+					)
 				}
 			} else if m.table.Focused() {
 				selectedRow := m.table.SelectedRow()
@@ -437,6 +514,16 @@ func (m model) View() string {
 
 	numResults := len(m.table.Rows())
 	headerText := fmt.Sprintf(" Results: %d", numResults)
+
+	checkMarkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9"))
+	checkMark := checkMarkStyle.Render("✔")
+
+	if m.crawling {
+		headerText += fmt.Sprintf(" • Crawling %s", m.spinner.View())
+	} else if m.finished {
+		headerText += fmt.Sprintf(" • Complete %s", checkMark)
+	}
+
 	if m.message != "" {
 		headerText += fmt.Sprintf(" • %s", m.message)
 	}
@@ -540,6 +627,7 @@ func (m model) exportToCSV() (string, error) {
 	_ = writer.Write([]string{"URL", "Status", "Type", "Size"})
 
 	for _, row := range m.table.Rows() {
+		// The size is already formatted as "%.2f kB" in the table row
 		if err := writer.Write(row); err != nil {
 			return "", err
 		}
