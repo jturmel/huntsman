@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -38,11 +41,13 @@ import (
 
 var (
 	focusedStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#bd93f9"))
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#bd93f9"))
 	blurredStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240"))
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240"))
+
+	maxConcurrency = 10
 )
 
 type crawlResult struct {
@@ -51,6 +56,110 @@ type crawlResult struct {
 	kind   string
 	size   int64
 	links  []string
+}
+
+type crawler struct {
+	baseUrl     *url.URL
+	visited     sync.Map
+	results     chan crawlResult
+	jobs        chan string
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	concurrency int
+}
+
+func newCrawler(baseUrl *url.URL, results chan crawlResult, concurrency int) *crawler {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &crawler{
+		baseUrl:     baseUrl,
+		results:     results,
+		jobs:        make(chan string, 1000),
+		ctx:         ctx,
+		cancel:      cancel,
+		concurrency: concurrency,
+	}
+}
+
+func (c *crawler) start() {
+	for i := 0; i < c.concurrency; i++ {
+		c.wg.Add(1)
+		go c.worker()
+	}
+}
+
+func (c *crawler) stop() {
+	c.cancel()
+	c.wg.Wait()
+}
+
+func (c *crawler) worker() {
+	defer c.wg.Done()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case target, ok := <-c.jobs:
+			if !ok {
+				return
+			}
+			res := c.doCrawl(target)
+
+			select {
+			case <-c.ctx.Done():
+				return
+			case c.results <- res:
+			}
+
+			for _, link := range res.links {
+				if _, loaded := c.visited.LoadOrStore(link, true); !loaded {
+					select {
+					case <-c.ctx.Done():
+						return
+					case c.jobs <- link:
+					default:
+						// If jobs channel is full, we might want to log or handle it
+						// For now, we'll just skip to avoid deadlocks in this simple implementation
+					}
+				}
+			}
+		}
+	}
+}
+
+func (c *crawler) doCrawl(targetUrl string) crawlResult {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	resp, err := client.Get(targetUrl)
+	if err != nil {
+		return crawlResult{url: targetUrl, status: "Error", kind: "N/A", size: 0}
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return crawlResult{url: targetUrl, status: "Read Err", kind: "N/A", size: 0}
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	kind := "Other"
+	if strings.Contains(contentType, "text/html") {
+		kind = "HTML"
+	}
+
+	var links []string
+	if kind == "HTML" {
+		links = extractLinks(strings.NewReader(string(bodyBytes)), targetUrl, c.baseUrl)
+	}
+
+	return crawlResult{
+		url:    targetUrl,
+		status: fmt.Sprintf("%d", resp.StatusCode),
+		kind:   kind,
+		size:   int64(len(bodyBytes)),
+		links:  links,
+	}
 }
 
 type errorMsg error
@@ -62,6 +171,8 @@ type model struct {
 	baseUrl   *url.URL
 	width     int
 	height    int
+	crawler   *crawler
+	results   chan crawlResult
 }
 
 func initialModel() model {
@@ -107,44 +218,17 @@ func initialModel() model {
 		textInput: ti,
 		table:     t,
 		visited:   make(map[string]bool),
+		results:   make(chan crawlResult, 100),
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, m.waitForResults())
 }
 
-func crawl(targetUrl string, baseUrl *url.URL) tea.Cmd {
+func (m model) waitForResults() tea.Cmd {
 	return func() tea.Msg {
-		resp, err := http.Get(targetUrl)
-		if err != nil {
-			return crawlResult{url: targetUrl, status: "Error", kind: "N/A", size: 0}
-		}
-		defer resp.Body.Close()
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return crawlResult{url: targetUrl, status: "Read Err", kind: "N/A", size: 0}
-		}
-
-		contentType := resp.Header.Get("Content-Type")
-		kind := "Other"
-		if strings.Contains(contentType, "text/html") {
-			kind = "HTML"
-		}
-
-		var links []string
-		if kind == "HTML" {
-			links = extractLinks(strings.NewReader(string(bodyBytes)), targetUrl, baseUrl)
-		}
-
-		return crawlResult{
-			url:    targetUrl,
-			status: fmt.Sprintf("%d", resp.StatusCode),
-			kind:   kind,
-			size:   int64(len(bodyBytes)),
-			links:  links,
-		}
+		return <-m.results
 	}
 }
 
@@ -237,7 +321,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case crawlResult:
-		// Mark as visited
+		// Mark as visited in UI
 		m.visited[msg.url] = true
 
 		// Add to table
@@ -245,19 +329,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rows = append(rows, table.Row{msg.url, msg.status, msg.kind, fmt.Sprintf("%d", msg.size)})
 		m.table.SetRows(rows)
 
-		// Find new links to crawl
-		var cmds []tea.Cmd
-		for _, link := range msg.links {
-			if !m.visited[link] {
-				m.visited[link] = true // Mark as visited immediately to avoid duplicate queues
-				cmds = append(cmds, crawl(link, m.baseUrl))
-			}
-		}
-		return m, tea.Batch(cmds...)
+		return m, m.waitForResults()
 
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "ctrl+c", "q":
+			if m.crawler != nil {
+				m.crawler.stop()
+			}
 			return m, tea.Quit
 		case "tab", "shift+tab":
 			if m.textInput.Focused() {
@@ -281,6 +360,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 
+					if m.crawler != nil {
+						m.crawler.stop()
+						// Drain any remaining results from the old crawler
+						for len(m.results) > 0 {
+							<-m.results
+						}
+					}
+
 					m.baseUrl = parsedUrl
 					m.visited = make(map[string]bool)
 					m.table.SetRows([]table.Row{})
@@ -289,7 +376,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					target := m.baseUrl.String()
 					m.visited[target] = true
-					return m, crawl(target, m.baseUrl)
+
+					concurrency := runtime.NumCPU() * 2
+					if concurrency > maxConcurrency {
+						concurrency = maxConcurrency
+					}
+
+					m.crawler = newCrawler(m.baseUrl, m.results, concurrency)
+					m.crawler.visited.Store(target, true)
+					m.crawler.start()
+					m.crawler.jobs <- target
+
+					return m, m.waitForResults()
 				}
 			} else if m.table.Focused() {
 				selectedRow := m.table.SelectedRow()
