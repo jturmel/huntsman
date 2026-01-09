@@ -44,6 +44,7 @@ Usage
         - By default, it filters by the **URL** column.
         - Use `type:{typevalue}` to filter by the **Type** column (e.g., `type:document`).
         - Use `status:{statusvalue}` to filter by the **Status** column (e.g., `status:404`).
+        - Use `from:{url}` to filter by the **From Source** column (e.g., `from:index.html`).
     - Press **Enter** on a highlighted row to open the URL in your default browser.
     - Press **q** to quit.
 

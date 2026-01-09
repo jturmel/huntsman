@@ -12,18 +12,24 @@ import (
 )
 
 type crawlResult struct {
+	url        string
+	status     string
+	kind       string
+	size       int64
+	links      []string
+	fromSource string
+}
+
+type job struct {
 	url    string
-	status string
-	kind   string
-	size   int64
-	links  []string
+	source string
 }
 
 type crawler struct {
 	baseUrl     *url.URL
 	visited     sync.Map
 	results     chan crawlResult
-	jobs        chan string
+	jobs        chan job
 	ctx         context.Context
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
@@ -36,7 +42,7 @@ func newCrawler(baseUrl *url.URL, results chan crawlResult, concurrency int) *cr
 	return &crawler{
 		baseUrl:     baseUrl,
 		results:     results,
-		jobs:        make(chan string, 10000),
+		jobs:        make(chan job, 10000),
 		ctx:         ctx,
 		cancel:      cancel,
 		concurrency: concurrency,
@@ -68,11 +74,11 @@ func (c *crawler) worker() {
 		select {
 		case <-c.ctx.Done():
 			return
-		case target, ok := <-c.jobs:
+		case j, ok := <-c.jobs:
 			if !ok {
 				return
 			}
-			res := c.doCrawl(target)
+			res := c.doCrawl(j.url, j.source)
 
 			select {
 			case <-c.ctx.Done():
@@ -88,7 +94,7 @@ func (c *crawler) worker() {
 					case <-c.ctx.Done():
 						c.active.Done()
 						return
-					case c.jobs <- link:
+					case c.jobs <- job{url: link, source: j.url}:
 					default:
 						c.active.Done()
 					}
@@ -99,19 +105,19 @@ func (c *crawler) worker() {
 	}
 }
 
-func (c *crawler) doCrawl(targetUrl string) crawlResult {
+func (c *crawler) doCrawl(targetUrl, sourceUrl string) crawlResult {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 	resp, err := client.Get(targetUrl)
 	if err != nil {
-		return crawlResult{url: targetUrl, status: "Error", kind: "N/A", size: 0}
+		return crawlResult{url: targetUrl, status: "Error", kind: "N/A", size: 0, fromSource: sourceUrl}
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return crawlResult{url: targetUrl, status: "Read Err", kind: "N/A", size: 0}
+		return crawlResult{url: targetUrl, status: "Read Err", kind: "N/A", size: 0, fromSource: sourceUrl}
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -144,10 +150,11 @@ func (c *crawler) doCrawl(targetUrl string) crawlResult {
 	}
 
 	return crawlResult{
-		url:    targetUrl,
-		status: fmt.Sprintf("%d", resp.StatusCode),
-		kind:   kind,
-		size:   int64(len(bodyBytes)),
-		links:  links,
+		url:        targetUrl,
+		status:     fmt.Sprintf("%d", resp.StatusCode),
+		kind:       kind,
+		size:       int64(len(bodyBytes)),
+		links:      links,
+		fromSource: sourceUrl,
 	}
 }

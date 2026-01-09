@@ -64,7 +64,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		statusWidth := 10
 		typeWidth := 15
 		sizeWidth := 10
-		urlWidth := targetTableWidth - statusWidth - typeWidth - sizeWidth - 3 - 8
+		fromWidth := 30
+		urlWidth := targetTableWidth - statusWidth - typeWidth - sizeWidth - fromWidth - 4 - 8
 
 		if urlWidth < 10 {
 			urlWidth = 10
@@ -75,10 +76,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "Status", Width: statusWidth},
 			{Title: "Type", Width: typeWidth},
 			{Title: "      Size", Width: sizeWidth},
+			{Title: "From Source", Width: fromWidth},
 		}
 		m.table.SetColumns(columns)
 
-		actualTableWidth := urlWidth + statusWidth + typeWidth + sizeWidth + 3 + 8 + 2
+		actualTableWidth := urlWidth + statusWidth + typeWidth + sizeWidth + fromWidth + 4 + 8 + 2
 		leftInputWidth := actualTableWidth / 2
 		rightInputWidth := actualTableWidth - leftInputWidth
 
@@ -106,10 +108,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sizeStr := fmt.Sprintf("%.1f kB", sizeKB)
 		formattedSize := fmt.Sprintf("%10s", sizeStr)
 
-		row := table.Row{msg.url, msg.status, msg.kind, formattedSize}
+		row := table.Row{msg.url, msg.status, msg.kind, formattedSize, msg.fromSource}
 		m.allRows = append(m.allRows, row)
 
-		if m.matchesFilter(msg.url, msg.kind, msg.status) {
+		if m.matchesFilter(msg.url, msg.kind, msg.status, msg.fromSource) {
 			rows := m.table.Rows()
 			rows = append(rows, row)
 			m.table.SetRows(rows)
@@ -225,7 +227,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.crawler.visited.Store(target, true)
 					m.crawler.active.Add(1)
 					m.crawler.start()
-					m.crawler.jobs <- target
+					m.crawler.jobs <- job{url: target, source: ""}
 
 					m.crawling = true
 					m.finished = false
@@ -268,7 +270,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.filterInput.Value() != oldFilter {
 			var filteredRows []table.Row
 			for _, row := range m.allRows {
-				if m.matchesFilter(row[0], row[2], row[1]) {
+				if m.matchesFilter(row[0], row[2], row[1], row[4]) {
 					filteredRows = append(filteredRows, row)
 				}
 			}
@@ -282,7 +284,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tiCmd, fiCmd, tCmd)
 }
 
-func (m model) matchesFilter(url, kind, status string) bool {
+func (m model) matchesFilter(url, kind, status, from string) bool {
 	filter := strings.ToLower(m.filterInput.Value())
 	if filter == "" {
 		return true
@@ -290,6 +292,7 @@ func (m model) matchesFilter(url, kind, status string) bool {
 
 	typeFilter := ""
 	statusFilter := ""
+	fromFilter := ""
 	contentFilter := ""
 
 	// Parse advanced filters
@@ -301,6 +304,8 @@ func (m model) matchesFilter(url, kind, status string) bool {
 			typeFilter = strings.TrimPrefix(part, "type:")
 		} else if strings.HasPrefix(part, "status:") {
 			statusFilter = strings.TrimPrefix(part, "status:")
+		} else if strings.HasPrefix(part, "from:") {
+			fromFilter = strings.TrimPrefix(part, "from:")
 		} else {
 			remainingParts = append(remainingParts, part)
 		}
@@ -310,8 +315,9 @@ func (m model) matchesFilter(url, kind, status string) bool {
 	matchContent := contentFilter == "" || strings.Contains(strings.ToLower(url), contentFilter)
 	matchType := typeFilter == "" || strings.Contains(strings.ToLower(kind), typeFilter)
 	matchStatus := statusFilter == "" || strings.Contains(strings.ToLower(status), statusFilter)
+	matchFrom := fromFilter == "" || strings.Contains(strings.ToLower(from), fromFilter)
 
-	return matchContent && matchType && matchStatus
+	return matchContent && matchType && matchStatus && matchFrom
 }
 
 func (m model) View() string {

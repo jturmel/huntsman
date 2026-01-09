@@ -81,7 +81,7 @@ func (m model) exportToCSV() (string, error) {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	_ = writer.Write([]string{"URL", "Status", "Type", "Size"})
+	_ = writer.Write([]string{"URL", "Status", "Type", "Size", "From Source"})
 
 	for _, row := range m.table.Rows() {
 		if err := writer.Write(row); err != nil {
