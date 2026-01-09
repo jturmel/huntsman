@@ -202,19 +202,22 @@ func (c *crawler) doCrawl(targetUrl string) crawlResult {
 type errorMsg error
 
 type model struct {
-	textInput textinput.Model
-	spinner   spinner.Model
-	table     table.Model
-	visited   map[string]bool
-	baseUrl   *url.URL
-	width     int
-	height    int
-	crawler   *crawler
-	results   chan crawlResult
-	message   string
-	msgTimer  *time.Timer
-	crawling  bool
-	finished  bool
+	textInput   textinput.Model
+	filterInput textinput.Model
+	spinner     spinner.Model
+	table       table.Model
+	allRows     []table.Row
+	visited     map[string]bool
+	baseUrl     *url.URL
+	width       int
+	height      int
+	crawler     *crawler
+	results     chan crawlResult
+	message     string
+	msgTimer    *time.Timer
+	crawling    bool
+	finished    bool
+	filtering   bool
 }
 
 type clearMsg struct{}
@@ -227,6 +230,12 @@ func initialModel() model {
 	ti.CharLimit = 156
 	ti.Width = 96
 	ti.Prompt = " "
+
+	fi := textinput.New()
+	fi.Placeholder = "Filter results..."
+	fi.CharLimit = 156
+	fi.Width = 96
+	fi.Prompt = " / "
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Spinner{
@@ -268,11 +277,12 @@ func initialModel() model {
 	t.SetStyles(s)
 
 	return model{
-		textInput: ti,
-		spinner:   sp,
-		table:     t,
-		visited:   make(map[string]bool),
-		results:   make(chan crawlResult, 10000),
+		textInput:   ti,
+		filterInput: fi,
+		spinner:     sp,
+		table:       t,
+		visited:     make(map[string]bool),
+		results:     make(chan crawlResult, 10000),
 	}
 }
 
@@ -364,13 +374,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table.SetColumns(columns)
 
 		// Adjust input width to match the table's total width
-		// Table total width = sum(column widths) + spaces between columns + padding
-		actualTableWidth := urlWidth + statusWidth + typeWidth + sizeWidth + 3 + 8
-		m.textInput.Width = actualTableWidth - 1 // -1 for prompt space
+		// Table total width = sum(column widths) + spaces between columns + padding + 2 for outer borders
+		actualTableWidth := urlWidth + statusWidth + typeWidth + sizeWidth + 3 + 8 + 2
+		leftInputWidth := actualTableWidth / 2
+		rightInputWidth := actualTableWidth - leftInputWidth
+
+		m.textInput.Width = leftInputWidth - 2    // -2 for borders
+		m.filterInput.Width = rightInputWidth - 4 // -4 for borders and " / " prompt
 
 		// Adjust table height
 		// Total height minus input (3 lines), header (3 lines), help (1 line) and some buffer
-		m.table.SetHeight(m.height - 10)
+		tableHeight := m.height - 10
+		m.table.SetHeight(tableHeight)
 
 		return m, nil
 
@@ -387,22 +402,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Mark as visited in UI
 		m.visited[msg.url] = true
 
-		// Add to table
-		rows := m.table.Rows()
+		// Add to allRows
 		sizeKB := float64(msg.size) / 1024.0
 		sizeStr := fmt.Sprintf("%.1f kB", sizeKB)
-
-		// Right align the size column
-		// The column width is 10 (or sizeWidth in Update)
-		// We subtract 2 from the width because the table component adds padding(0,1) to each cell
-		// which means there is 1 space on each side.
-		// However, the internal logic of bubbles/table might handle this differently.
-		// Let's look at how the columns are defined.
-		// sizeWidth is 10.
 		formattedSize := fmt.Sprintf("%10s", sizeStr)
 
-		rows = append(rows, table.Row{msg.url, msg.status, msg.kind, formattedSize})
-		m.table.SetRows(rows)
+		row := table.Row{msg.url, msg.status, msg.kind, formattedSize}
+		m.allRows = append(m.allRows, row)
+
+		// Filter and update table if it matches filter or if filter is empty
+		filter := strings.ToLower(m.filterInput.Value())
+		if filter == "" || strings.Contains(strings.ToLower(msg.url), filter) {
+			rows := m.table.Rows()
+			rows = append(rows, row)
+			m.table.SetRows(rows)
+		}
 
 		return m, m.waitForResults()
 
@@ -413,21 +427,70 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc", "ctrl+c", "q":
+		case "ctrl+c":
 			if m.crawler != nil {
 				m.crawler.stop()
 			}
 			return m, tea.Quit
-		case "tab", "shift+tab":
+		case "q":
+			if !m.filtering && !m.textInput.Focused() {
+				if m.crawler != nil {
+					m.crawler.stop()
+				}
+				return m, tea.Quit
+			}
+		case "esc":
+			if m.filtering {
+				m.filtering = false
+				m.filterInput.Blur()
+				m.table.SetRows(m.allRows)
+				return m, nil
+			}
+			if m.crawler != nil {
+				m.crawler.stop()
+			}
+			return m, tea.Quit
+		case "tab":
+			if m.textInput.Focused() {
+				m.textInput.Blur()
+				m.filterInput.Focus()
+				m.filtering = true
+			} else if m.filterInput.Focused() {
+				m.filterInput.Blur()
+				m.table.Focus()
+				m.filtering = false
+			} else {
+				m.table.Blur()
+				m.textInput.Focus()
+				m.filtering = false
+			}
+		case "shift+tab":
 			if m.textInput.Focused() {
 				m.textInput.Blur()
 				m.table.Focus()
-			} else {
+				m.filtering = false
+			} else if m.filterInput.Focused() {
+				m.filterInput.Blur()
 				m.textInput.Focus()
+				m.filtering = false
+			} else {
 				m.table.Blur()
+				m.filterInput.Focus()
+				m.filtering = true
+			}
+		case "/":
+			if m.table.Focused() && !m.filtering {
+				m.filtering = true
+				m.filterInput.Focus()
+				m.filterInput.SetValue("")
+				return m, nil
 			}
 		case "enter":
-			if m.textInput.Focused() {
+			if m.filtering || m.textInput.Focused() {
+				if m.filtering {
+					m.filtering = false
+					m.filterInput.Blur()
+				}
 				rawUrl := m.textInput.Value()
 				if rawUrl != "" {
 					if !strings.HasPrefix(rawUrl, "http://") && !strings.HasPrefix(rawUrl, "https://") {
@@ -450,6 +513,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					m.baseUrl = parsedUrl
 					m.visited = make(map[string]bool)
+					m.allRows = []table.Row{}
 					m.table.SetRows([]table.Row{})
 					m.textInput.Blur()
 					m.table.Focus()
@@ -476,6 +540,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.spinner.Tick,
 					)
 				}
+				return m, nil
 			} else if m.table.Focused() {
 				selectedRow := m.table.SelectedRow()
 				if len(selectedRow) > 0 {
@@ -498,15 +563,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	var tiCmd, tCmd tea.Cmd
+	var tiCmd, fiCmd, tCmd tea.Cmd
 	if m.textInput.Focused() {
 		m.textInput, tiCmd = m.textInput.Update(msg)
+	}
+	if m.filterInput.Focused() {
+		oldFilter := m.filterInput.Value()
+		m.filterInput, fiCmd = m.filterInput.Update(msg)
+		if m.filterInput.Value() != oldFilter {
+			// Update table rows based on filter
+			var filteredRows []table.Row
+			filter := strings.ToLower(m.filterInput.Value())
+			for _, row := range m.allRows {
+				if strings.Contains(strings.ToLower(row[0]), filter) {
+					filteredRows = append(filteredRows, row)
+				}
+			}
+			m.table.SetRows(filteredRows)
+		}
 	}
 	if m.table.Focused() {
 		m.table, tCmd = m.table.Update(msg)
 	}
 
-	return m, tea.Batch(tiCmd, tCmd)
+	return m, tea.Batch(tiCmd, fiCmd, tCmd)
 }
 
 func (m model) View() string {
@@ -546,7 +626,7 @@ func (m model) View() string {
 		Width(contentWidth).
 		Border(lipgloss.RoundedBorder(), true, true, false, true)
 
-	if m.table.Focused() {
+	if m.table.Focused() && !m.filtering {
 		headerStyle = headerStyle.BorderForeground(lipgloss.Color("#bd93f9"))
 		// Adjust table style to remove top border since header provides it
 		tableView = focusedStyle.Copy().
@@ -567,29 +647,43 @@ func (m model) View() string {
 	headerView := headerStyle.Render(headerText)
 
 	// Ensure input view also respects width
+	// Total width should be contentWidth + 2 to account for the table's outer borders
+	totalWidth := contentWidth + 2
+	leftInputWidth := totalWidth / 2
+	rightInputWidth := totalWidth - leftInputWidth
+
 	inputStyle := blurredStyle.Copy().
-		Width(contentWidth)
+		Width(leftInputWidth - 2) // -2 for borders
 	if m.textInput.Focused() {
 		inputStyle = focusedStyle.Copy().
-			Width(contentWidth)
+			Width(leftInputWidth - 2)
 	}
 	inputView = inputStyle.Render(m.textInput.View())
 
+	filterStyle := blurredStyle.Copy().
+		Width(rightInputWidth - 2)
+	if m.filtering {
+		filterStyle = focusedStyle.Copy().
+			Width(rightInputWidth - 2)
+	}
+	filterView := filterStyle.Render(m.filterInput.View())
+
+	inputsView := lipgloss.JoinHorizontal(lipgloss.Top, inputView, filterView)
+
 	var helpView string
-	if m.textInput.Focused() {
-		helpView = "Tab: focus table • Enter: start crawl • q: quit"
+	if m.textInput.Focused() || m.filterInput.Focused() {
+		helpView = "Tab: focus results • Enter: start crawl • Esc: quit"
 	} else {
-		helpView = "Tab: focus input • Enter: open URL • w: export • Arrows/j/k: scroll • q: quit"
+		helpView = "Tab: focus input • /: filter • Enter: open URL • w: export • Arrows/j/k: scroll • q: quit"
 	}
 
 	helpStyle := lipgloss.NewStyle().PaddingLeft(1)
 
+	elements := []string{inputsView, headerView, tableView, helpStyle.Render(helpView)}
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		inputView,
-		headerView,
-		tableView,
-		helpStyle.Render(helpView),
+		elements...,
 	)
 }
 
