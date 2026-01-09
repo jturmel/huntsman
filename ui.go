@@ -109,8 +109,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		row := table.Row{msg.url, msg.status, msg.kind, formattedSize}
 		m.allRows = append(m.allRows, row)
 
-		filter := strings.ToLower(m.filterInput.Value())
-		if filter == "" || strings.Contains(strings.ToLower(msg.url), filter) {
+		if m.matchesFilter(msg.url, msg.kind, msg.status) {
 			rows := m.table.Rows()
 			rows = append(rows, row)
 			m.table.SetRows(rows)
@@ -268,9 +267,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filterInput, fiCmd = m.filterInput.Update(msg)
 		if m.filterInput.Value() != oldFilter {
 			var filteredRows []table.Row
-			filter := strings.ToLower(m.filterInput.Value())
 			for _, row := range m.allRows {
-				if strings.Contains(strings.ToLower(row[0]), filter) {
+				if m.matchesFilter(row[0], row[2], row[1]) {
 					filteredRows = append(filteredRows, row)
 				}
 			}
@@ -282,6 +280,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(tiCmd, fiCmd, tCmd)
+}
+
+func (m model) matchesFilter(url, kind, status string) bool {
+	filter := strings.ToLower(m.filterInput.Value())
+	if filter == "" {
+		return true
+	}
+
+	typeFilter := ""
+	statusFilter := ""
+	contentFilter := ""
+
+	// Parse advanced filters
+	parts := strings.Fields(filter)
+	var remainingParts []string
+
+	for _, part := range parts {
+		if strings.HasPrefix(part, "type:") {
+			typeFilter = strings.TrimPrefix(part, "type:")
+		} else if strings.HasPrefix(part, "status:") {
+			statusFilter = strings.TrimPrefix(part, "status:")
+		} else {
+			remainingParts = append(remainingParts, part)
+		}
+	}
+	contentFilter = strings.Join(remainingParts, " ")
+
+	matchContent := contentFilter == "" || strings.Contains(strings.ToLower(url), contentFilter)
+	matchType := typeFilter == "" || strings.Contains(strings.ToLower(kind), typeFilter)
+	matchStatus := statusFilter == "" || strings.Contains(strings.ToLower(status), statusFilter)
+
+	return matchContent && matchType && matchStatus
 }
 
 func (m model) View() string {

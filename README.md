@@ -39,6 +39,11 @@ Usage
 4. Use **Tab** to switch between the input box and the results table.
 5. In the results table:
     - Use **Arrows** or **j/k** to scroll.
+    - Press **/** to focus the filter input.
+    - Advanced filtering:
+        - By default, it filters by the **URL** column.
+        - Use `type:{typevalue}` to filter by the **Type** column (e.g., `type:document`).
+        - Use `status:{statusvalue}` to filter by the **Status** column (e.g., `status:404`).
     - Press **Enter** on a highlighted row to open the URL in your default browser.
     - Press **q** to quit.
 
