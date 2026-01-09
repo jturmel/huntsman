@@ -238,7 +238,7 @@ func initialModel() model {
 	columns := []table.Column{
 		{Title: "URL", Width: 60},
 		{Title: "Status", Width: 10},
-		{Title: "Type", Width: 10},
+		{Title: "Type", Width: 15},
 		{Title: "      Size", Width: 10},
 	}
 
@@ -343,7 +343,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Adjust columns proportionally
 		// URL gets the most space
 		statusWidth := 10
-		typeWidth := 10
+		typeWidth := 15
 		sizeWidth := 10
 		// bubbles/table adds 1 space between columns.
 		// We have 4 columns, so 3 spaces.
