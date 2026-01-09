@@ -287,19 +287,19 @@ func (m model) View() string {
 	var inputView, tableView string
 
 	numResults := len(m.table.Rows())
-	headerText := fmt.Sprintf(" Results: %d", numResults)
+	headerText := fmt.Sprintf(" Results: %d ", numResults)
 
 	checkMarkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9"))
 	checkMark := checkMarkStyle.Render("✔")
 
 	if m.crawling {
-		headerText += fmt.Sprintf(" • Crawling %s", m.spinner.View())
+		headerText += fmt.Sprintf("• Crawling %s ", m.spinner.View())
 	} else if m.finished {
-		headerText += fmt.Sprintf(" • Complete %s", checkMark)
+		headerText += fmt.Sprintf("• Complete %s ", checkMark)
 	}
 
 	if m.message != "" {
-		headerText += fmt.Sprintf(" • %s", m.message)
+		headerText += fmt.Sprintf("• %s ", m.message)
 	}
 
 	tableViewContent := m.table.View()
@@ -314,49 +314,104 @@ func (m model) View() string {
 		}
 	}
 
-	headerStyle := lipgloss.NewStyle().
-		Width(contentWidth).
-		Border(lipgloss.RoundedBorder(), true, true, false, true)
-
-	if m.table.Focused() && !m.filtering {
-		headerStyle = headerStyle.BorderForeground(lipgloss.Color("#bd93f9"))
-		tableView = focusedStyle.Copy().
-			Width(contentWidth).
-			Border(lipgloss.RoundedBorder(), false, true, true, true).
-			BorderForeground(lipgloss.Color("#bd93f9")).
-			Render(tableViewContent)
-	} else {
-		headerStyle = headerStyle.BorderForeground(lipgloss.Color("240"))
-		tableView = blurredStyle.Copy().
-			Width(contentWidth).
-			Border(lipgloss.RoundedBorder(), false, true, true, true).
-			BorderForeground(lipgloss.Color("240")).
-			Render(tableViewContent)
-	}
-
-	headerView := headerStyle.Render(headerText)
-
 	totalWidth := contentWidth + 2
 	leftInputWidth := totalWidth / 2
 	rightInputWidth := totalWidth - leftInputWidth
 
-	inputStyle := blurredStyle.Copy().
-		Width(leftInputWidth - 2)
+	// URL Input
+	inputStyle := blurredStyle.Copy().Width(leftInputWidth - 2)
 	if m.textInput.Focused() {
-		inputStyle = focusedStyle.Copy().
-			Width(leftInputWidth - 2)
+		inputStyle = focusedStyle.Copy().Width(leftInputWidth - 2)
 	}
+	inputStyle = inputStyle.Border(lipgloss.RoundedBorder()).BorderTop(false)
 	inputView = inputStyle.Render(m.textInput.View())
 
-	filterStyle := blurredStyle.Copy().
-		Width(rightInputWidth - 2)
-	if m.filtering {
-		filterStyle = focusedStyle.Copy().
-			Width(rightInputWidth - 2)
+	// Add intersecting title for URL Input
+	inputTitle := " URL "
+	if m.textInput.Focused() {
+		inputTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9")).Render(inputTitle)
 	}
-	filterView := filterStyle.Render(m.filterInput.View())
+
+	border := lipgloss.RoundedBorder()
+	borderColor := "240"
+	if m.textInput.Focused() {
+		borderColor = "#bd93f9"
+	}
+	bc := lipgloss.Color(borderColor)
+	titleWidth := lipgloss.Width(inputTitle)
+
+	left := lipgloss.NewStyle().Foreground(bc).Render(string(border.TopLeft) + string(border.Top))
+	rightCount := leftInputWidth - titleWidth - 3
+	if rightCount < 0 {
+		rightCount = 0
+	}
+	right := lipgloss.NewStyle().Foreground(bc).Render(strings.Repeat(string(border.Top), rightCount) + string(border.TopRight))
+
+	inputView = left + inputTitle + right + "\n" + inputView
+
+	// Filter Input
+	var filterView string
+	filterStyle := blurredStyle.Copy().Width(rightInputWidth - 2)
+	if m.filtering {
+		filterStyle = focusedStyle.Copy().Width(rightInputWidth - 2)
+	}
+	filterStyle = filterStyle.Border(lipgloss.RoundedBorder()).BorderTop(false)
+	filterView = filterStyle.Render(m.filterInput.View())
+
+	// Add intersecting title for Filter Input
+	filterTitle := " Filter "
+	if m.filtering {
+		filterTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9")).Render(filterTitle)
+	}
+
+	borderColor = "240"
+	if m.filtering {
+		borderColor = "#bd93f9"
+	}
+	bc = lipgloss.Color(borderColor)
+	titleWidth = lipgloss.Width(filterTitle)
+
+	left = lipgloss.NewStyle().Foreground(bc).Render(string(border.TopLeft) + string(border.Top))
+	rightCount = rightInputWidth - titleWidth - 3
+	if rightCount < 0 {
+		rightCount = 0
+	}
+	right = lipgloss.NewStyle().Foreground(bc).Render(strings.Repeat(string(border.Top), rightCount) + string(border.TopRight))
+
+	filterView = left + filterTitle + right + "\n" + filterView
 
 	inputsView := lipgloss.JoinHorizontal(lipgloss.Top, inputView, filterView)
+
+	// Results Table
+	baseTableStyle := blurredStyle.Copy().Width(contentWidth)
+	if m.table.Focused() && !m.filtering {
+		baseTableStyle = focusedStyle.Copy().Width(contentWidth)
+	}
+	baseTableStyle = baseTableStyle.Border(lipgloss.RoundedBorder()).BorderTop(false)
+	tableView = baseTableStyle.Render(tableViewContent)
+
+	// Add intersecting title for Results
+	resultsTitle := headerText
+	if m.table.Focused() && !m.filtering {
+		resultsTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9")).Render(resultsTitle)
+	}
+
+	borderColor = "240"
+	if m.table.Focused() && !m.filtering {
+		borderColor = "#bd93f9"
+	}
+
+	bc = lipgloss.Color(borderColor)
+	titleWidth = lipgloss.Width(resultsTitle)
+
+	left = lipgloss.NewStyle().Foreground(bc).Render(string(border.TopLeft) + string(border.Top))
+	rightCount = (contentWidth + 2) - titleWidth - 3
+	if rightCount < 0 {
+		rightCount = 0
+	}
+	right = lipgloss.NewStyle().Foreground(bc).Render(strings.Repeat(string(border.Top), rightCount) + string(border.TopRight))
+
+	tableView = left + resultsTitle + right + "\n" + tableView
 
 	var helpView string
 	if m.textInput.Focused() || m.filterInput.Focused() {
@@ -367,7 +422,7 @@ func (m model) View() string {
 
 	helpStyle := lipgloss.NewStyle().PaddingLeft(1)
 
-	elements := []string{inputsView, headerView, tableView, helpStyle.Render(helpView)}
+	elements := []string{inputsView, tableView, helpStyle.Render(helpView)}
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
