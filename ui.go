@@ -33,6 +33,7 @@ type model struct {
 	crawling    bool
 	finished    bool
 	filtering   bool
+	theme       Theme
 }
 
 type clearMsg struct{}
@@ -289,7 +290,7 @@ func (m model) View() string {
 	numResults := len(m.table.Rows())
 	headerText := fmt.Sprintf(" Results: %d ", numResults)
 
-	checkMarkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9"))
+	checkMarkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.CheckMarkColor))
 	checkMark := checkMarkStyle.Render("✔")
 
 	if m.crawling {
@@ -329,13 +330,13 @@ func (m model) View() string {
 	// Add intersecting title for URL Input
 	inputTitle := " URL "
 	if m.textInput.Focused() {
-		inputTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9")).Render(inputTitle)
+		inputTitle = lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.FocusedColor)).Render(inputTitle)
 	}
 
 	border := lipgloss.RoundedBorder()
-	borderColor := "240"
+	borderColor := m.theme.BlurredColor
 	if m.textInput.Focused() {
-		borderColor = "#bd93f9"
+		borderColor = m.theme.FocusedColor
 	}
 	bc := lipgloss.Color(borderColor)
 	titleWidth := lipgloss.Width(inputTitle)
@@ -361,12 +362,12 @@ func (m model) View() string {
 	// Add intersecting title for Filter Input
 	filterTitle := " Filter "
 	if m.filtering {
-		filterTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9")).Render(filterTitle)
+		filterTitle = lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.FocusedColor)).Render(filterTitle)
 	}
 
-	borderColor = "240"
+	borderColor = m.theme.BlurredColor
 	if m.filtering {
-		borderColor = "#bd93f9"
+		borderColor = m.theme.FocusedColor
 	}
 	bc = lipgloss.Color(borderColor)
 	titleWidth = lipgloss.Width(filterTitle)
@@ -393,12 +394,12 @@ func (m model) View() string {
 	// Add intersecting title for Results
 	resultsTitle := headerText
 	if m.table.Focused() && !m.filtering {
-		resultsTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9")).Render(resultsTitle)
+		resultsTitle = lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.FocusedColor)).Render(resultsTitle)
 	}
 
-	borderColor = "240"
+	borderColor = m.theme.BlurredColor
 	if m.table.Focused() && !m.filtering {
-		borderColor = "#bd93f9"
+		borderColor = m.theme.FocusedColor
 	}
 
 	bc = lipgloss.Color(borderColor)

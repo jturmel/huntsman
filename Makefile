@@ -28,5 +28,18 @@ clean:
 
 run: build
 	./$(BINARY_NAME)
+	
+install: build
+ifeq ($(shell uname), Darwin)
+	mkdir -p /usr/local/bin
+	cp $(BINARY_NAME) /usr/local/bin/
+	mkdir -p "$(HOME)/Library/Application Support/huntsman"
+	cp theme.json "$(HOME)/Library/Application Support/huntsman/"
+else
+	mkdir -p $(HOME)/.local/bin
+	cp $(BINARY_NAME) $(HOME)/.local/bin/
+	mkdir -p $(HOME)/.config/huntsman
+	cp theme.json $(HOME)/.config/huntsman/
+endif
 
-.PHONY: all build clean run setup-hooks
+.PHONY: all build clean run setup-hooks install

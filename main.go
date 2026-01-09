@@ -33,16 +33,19 @@ import (
 
 var (
 	focusedStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#bd93f9"))
+			BorderStyle(lipgloss.RoundedBorder())
 	blurredStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240"))
+			BorderStyle(lipgloss.RoundedBorder())
 
 	maxConcurrency = 10
 )
 
 func initialModel() model {
+	theme := LoadTheme()
+
+	focusedStyle = focusedStyle.BorderForeground(lipgloss.Color(theme.FocusedColor))
+	blurredStyle = blurredStyle.BorderForeground(lipgloss.Color(theme.BlurredColor))
+
 	ti := textinput.New()
 	ti.Placeholder = "Enter URL to spider..."
 	ti.Focus()
@@ -61,7 +64,7 @@ func initialModel() model {
 		Frames: []string{"∙∙∙∙∙∙", "●∙∙∙∙∙", "∙●∙∙∙∙", "∙∙●∙∙∙", "∙∙∙●∙∙", "∙∙∙∙●∙", "∙∙∙∙∙●"},
 		FPS:    time.Second / 10,
 	}
-	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#bd93f9"))
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.SpinnerColor))
 
 	columns := []table.Column{
 		{Title: "URL", Width: 60},
@@ -84,13 +87,13 @@ func initialModel() model {
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(lipgloss.Color(theme.BlurredColor)).
 		BorderBottom(true).
 		Bold(false).
 		Padding(0, 1)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("#bd93f9")).
+		Foreground(lipgloss.Color(theme.TableSelectedFG)).
+		Background(lipgloss.Color(theme.TableSelectedBG)).
 		Bold(false)
 	s.Cell = s.Cell.Padding(0, 1)
 	t.SetStyles(s)
@@ -102,6 +105,7 @@ func initialModel() model {
 		table:       t,
 		visited:     make(map[string]bool),
 		results:     make(chan crawlResult, 10000),
+		theme:       theme,
 	}
 }
 

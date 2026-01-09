@@ -25,11 +25,10 @@ If you have Go installed, you can build and install manually:
 ```bash
 git clone https://github.com/jturmel/huntsman.git
 cd huntsman
-make build
-cp huntsman /usr/local/bin/ # macOS
-# OR
-cp huntsman ~/.local/bin/  # Linux
+make install
 ```
+
+This will install the binary to `~/.local/bin/` (Linux) or `/usr/local/bin` (macOS), and a default `theme.json` to `~/.config/huntsman/` (Linux) or `~/Library/Application Support/huntsman/` (macOS).
 
 Usage
 -----
@@ -42,6 +41,28 @@ Usage
     - Use **Arrows** or **j/k** to scroll.
     - Press **Enter** on a highlighted row to open the URL in your default browser.
     - Press **q** to quit.
+
+Configuration
+-------------
+
+Huntsman supports custom color themes via a `theme.json` file. The app looks for this file in several locations (in order):
+1. The current directory.
+2. The same directory as the `huntsman` executable.
+3. `~/.config/huntsman/theme.json`.
+4. `~/Library/Application Support/huntsman/theme.json` (macOS only).
+
+Example `theme.json`:
+
+```json
+{
+  "focused_color": "#bd93f9",
+  "blurred_color": "240",
+  "spinner_color": "#bd93f9",
+  "check_mark_color": "#bd93f9",
+  "table_selected_fg": "229",
+  "table_selected_bg": "#bd93f9"
+}
+```
 
 License
 -------

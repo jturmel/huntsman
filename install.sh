@@ -79,7 +79,7 @@ download_from_release() {
     else
         download_url="https://github.com/$REPO/releases/download/$VERSION/$file"
     fi
-    curl -sL --fail "$download_url" -o "$BINARY_NAME" || {
+    curl -sL --fail "$download_url" -o "$2" || {
         echo "Error: Failed to download $file. It might not be available in the $VERSION release."
         exit 1
     }
@@ -100,7 +100,7 @@ if [ -f "$ASSET_NAME" ]; then
 elif [ -f "$BINARY_NAME" ]; then
     echo "Using local binary $BINARY_NAME..."
 else
-    download_from_release "$ASSET_NAME"
+    download_from_release "$ASSET_NAME" "$BINARY_NAME"
 fi
 
 # Check if the binary exists now
@@ -119,6 +119,24 @@ else
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
 fi
 rm "$BINARY_NAME"
+
+# 4. Handle theme.json
+if [ "$OS" = "darwin" ]; then
+    CONFIG_DIR="$HOME/Library/Application Support/huntsman"
+else
+    CONFIG_DIR="$HOME/.config/huntsman"
+fi
+mkdir -p "$CONFIG_DIR"
+if [ ! -f "$CONFIG_DIR/theme.json" ]; then
+    if [ -f "theme.json" ]; then
+        echo "Using local theme.json..."
+        cp theme.json "$CONFIG_DIR/"
+    else
+        download_from_release "theme.json" "$CONFIG_DIR/theme.json"
+    fi
+else
+    echo "Theme file already exists at $CONFIG_DIR/theme.json, skipping."
+fi
 
 echo "Installation complete!"
 echo "Note: Make sure $INSTALL_DIR is in your PATH."

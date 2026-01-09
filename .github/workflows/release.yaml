@@ -33,6 +33,7 @@ jobs:
         with:
           files: |
             huntsman-${{ matrix.os }}-${{ matrix.arch }}
+            theme.json
 
   release-info:
     name: Update Release Info
