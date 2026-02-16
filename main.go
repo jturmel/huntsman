@@ -29,6 +29,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/jturmel/huntsman/crawler"
 )
 
 var (
@@ -104,7 +105,8 @@ func initialModel() model {
 		spinner:     sp,
 		table:       t,
 		visited:     make(map[string]bool),
-		results:     make(chan crawlResult, 10000),
+		results:     make(chan crawler.Resource, 10000),
+		spaMode:     true,
 		theme:       theme,
 	}
 }

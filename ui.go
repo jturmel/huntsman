@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"runtime"
@@ -12,6 +13,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/chromedp/chromedp"
+	"github.com/jturmel/huntsman/crawler"
 )
 
 type errorMsg error
@@ -26,13 +29,14 @@ type model struct {
 	baseUrl     *url.URL
 	width       int
 	height      int
-	crawler     *crawler
-	results     chan crawlResult
+	crawler     crawler.Crawler
+	results     chan crawler.Resource
 	message     string
 	msgTimer    *time.Timer
 	crawling    bool
 	finished    bool
 	filtering   bool
+	spaMode     bool
 	theme       Theme
 }
 
@@ -96,22 +100,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = ""
 		return m, nil
 
-	case crawlResult:
-		if msg.url == "__FINISHED__" {
+	case crawler.Resource:
+		if msg.URL == "__FINISHED__" {
 			m.crawling = false
 			m.finished = true
 			return m, nil
 		}
-		m.visited[msg.url] = true
+		m.visited[msg.URL] = true
 
-		sizeKB := float64(msg.size) / 1024.0
+		sizeKB := float64(msg.Size) / 1024.0
 		sizeStr := fmt.Sprintf("%.1f kB", sizeKB)
 		formattedSize := fmt.Sprintf("%10s", sizeStr)
 
-		row := table.Row{msg.url, msg.status, msg.kind, formattedSize, msg.fromSource}
+		row := table.Row{msg.URL, msg.Status, msg.Kind, formattedSize, msg.FromSource}
 		m.allRows = append(m.allRows, row)
 
-		if m.matchesFilter(msg.url, msg.kind, msg.status, msg.fromSource) {
+		if m.matchesFilter(msg.URL, msg.Kind, msg.Status, msg.FromSource) {
 			rows := m.table.Rows()
 			rows = append(rows, row)
 			m.table.SetRows(rows)
@@ -128,13 +132,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			if m.crawler != nil {
-				m.crawler.stop()
+				m.crawler.Stop()
 			}
 			return m, tea.Quit
 		case "q":
 			if !m.filtering && !m.textInput.Focused() {
 				if m.crawler != nil {
-					m.crawler.stop()
+					m.crawler.Stop()
 				}
 				return m, tea.Quit
 			}
@@ -146,7 +150,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.crawler != nil {
-				m.crawler.stop()
+				m.crawler.Stop()
 			}
 			return m, tea.Quit
 		case "tab":
@@ -184,6 +188,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterInput.SetValue("")
 				return m, nil
 			}
+		case "s":
+			if !m.textInput.Focused() && !m.filtering {
+				m.spaMode = !m.spaMode
+				if m.spaMode {
+					m.message = "SPA Mode Enabled (Headless)"
+				} else {
+					m.message = "Static Mode Enabled"
+				}
+				return m, tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
+					return clearMsg{}
+				})
+			}
 		case "enter":
 			if m.filtering || m.textInput.Focused() {
 				if m.filtering {
@@ -202,9 +218,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 
 					if m.crawler != nil {
-						m.crawler.stop()
-						for len(m.results) > 0 {
-							<-m.results
+						m.crawler.Stop()
+						select {
+						case <-m.results:
+						default:
 						}
 					}
 
@@ -215,19 +232,59 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.textInput.Blur()
 					m.table.Focus()
 
-					target := m.baseUrl.String()
-					m.visited[target] = true
-
 					concurrency := runtime.NumCPU() * 2
 					if concurrency > maxConcurrency {
 						concurrency = maxConcurrency
 					}
 
-					m.crawler = newCrawler(m.baseUrl, m.results, concurrency)
-					m.crawler.visited.Store(target, true)
-					m.crawler.active.Add(1)
-					m.crawler.start()
-					m.crawler.jobs <- job{url: target, source: ""}
+					var collector crawler.Collector
+					if m.spaMode {
+						collector = crawler.NewHeadlessCollector()
+						if concurrency > 8 {
+							concurrency = 8
+						}
+					} else {
+						collector = crawler.NewStaticCollector()
+					}
+					
+					registry := crawler.NewInMemoryRegistry()
+					m.crawler = crawler.NewStandardCrawler(collector, registry, concurrency)
+
+					// Start crawling in a goroutine
+					go func() {
+						var ctx context.Context = context.Background()
+						var cancel context.CancelFunc = func() {}
+
+						if m.spaMode {
+							// Create persistent browser context
+							opts := append(chromedp.DefaultExecAllocatorOptions[:],
+								chromedp.DisableGPU,
+								chromedp.NoSandbox,
+								chromedp.Headless,
+							)
+							allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
+							ctx, cancel = chromedp.NewContext(allocCtx)
+							
+							// Chain cleanup
+							originalCancel := cancel
+							cancel = func() {
+								originalCancel()
+								cancelAlloc()
+							}
+						}
+						defer cancel()
+
+						_ = m.crawler.Start(ctx, m.baseUrl.String())
+					}()
+
+					// Forward results to m.results
+					go func() {
+						for res := range m.crawler.Results() {
+							m.results <- res
+						}
+						// Signal completion
+						m.results <- crawler.Resource{URL: "__FINISHED__"}
+					}()
 
 					m.crawling = true
 					m.finished = false
@@ -333,6 +390,12 @@ func (m model) View() string {
 		headerText += fmt.Sprintf("• Crawling %s ", m.spinner.View())
 	} else if m.finished {
 		headerText += fmt.Sprintf("• Complete %s ", checkMark)
+	}
+
+	if m.spaMode {
+		headerText += "• SPA Mode "
+	} else {
+		headerText += "• Static Mode "
 	}
 
 	if m.message != "" {
@@ -454,7 +517,7 @@ func (m model) View() string {
 	if m.textInput.Focused() || m.filterInput.Focused() {
 		helpView = "Tab: focus results • Enter: start crawl • Esc: quit"
 	} else {
-		helpView = "Tab: focus input • /: filter • Enter: open URL • w: export • Arrows/j/k: scroll • q: quit"
+		helpView = "Tab: focus input • /: filter • s: toggle SPA • Enter: open URL • w: export • Arrows/j/k: scroll • q: quit"
 	}
 
 	helpStyle := lipgloss.NewStyle().PaddingLeft(1)
