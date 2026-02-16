@@ -1,0 +1,8 @@
+{
+  "track_id": "auto_branching_20260215",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-02-15T22:38:00Z",
+  "updated_at": "2026-02-15T22:38:00Z",
+  "description": "Update conductor setup to always first checkout a new branch (new-track/track_id) before starting"
+}
