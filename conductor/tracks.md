@@ -11,3 +11,8 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 - [ ] **Track: Organize structure of go app into an internal directory so that we clean up the root of the project**
 *Link: [./tracks/refactor_structure_20260216/](./tracks/refactor_structure_20260216/)*
+
+---
+
+- [ ] **Track: Implement new install process similar to how we're doing it for cleat (look at ~/dev/made-with-future/cleat)**
+*Link: [./tracks/modernized_install_20260216/](./tracks/modernized_install_20260216/)*
