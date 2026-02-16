@@ -16,3 +16,8 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 - [ ] **Track: Implement new install process similar to how we're doing it for cleat (look at ~/dev/made-with-future/cleat)**
 *Link: [./tracks/modernized_install_20260216/](./tracks/modernized_install_20260216/)*
+
+---
+
+- [ ] **Track: Implement MCP server mode for huntsman that can assist AI agents through tool calls to provide lists of resources on a given website/URL tree**
+*Link: [./tracks/mcp_server_20260216/](./tracks/mcp_server_20260216/)*
