@@ -21,3 +21,8 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 - [ ] **Track: Implement MCP server mode for huntsman that can assist AI agents through tool calls to provide lists of resources on a given website/URL tree**
 *Link: [./tracks/mcp_server_20260216/](./tracks/mcp_server_20260216/)*
+
+---
+
+- [ ] **Track: Switch license to MIT and anywhere it's referenced**
+*Link: [./tracks/switch_license_to_mit_20260216/](./tracks/switch_license_to_mit_20260216/)*

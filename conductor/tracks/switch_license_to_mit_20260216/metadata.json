@@ -1,0 +1,8 @@
+{
+  "track_id": "switch_license_to_mit_20260216",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-02-16T00:00:00Z",
+  "updated_at": "2026-02-16T00:00:00Z",
+  "description": "Switch license to MIT and anywhere it's referenced"
+}
