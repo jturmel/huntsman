@@ -1,0 +1,8 @@
+{
+  "track_id": "refactor_structure_20260216",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-02-16T00:15:00Z",
+  "updated_at": "2026-02-16T00:15:00Z",
+  "description": "Organize structure of go app into an internal directory so that we clean up the root of the project"
+}
