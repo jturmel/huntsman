@@ -1,0 +1,8 @@
+{
+  "track_id": "setup_dependabot_20260215",
+  "type": "chore",
+  "status": "new",
+  "created_at": "2026-02-15T23:55:00Z",
+  "updated_at": "2026-02-15T23:55:00Z",
+  "description": "Setup Dependabot for Go and GitHub Actions with auto-merge for patch updates"
+}
