@@ -3,54 +3,13 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
-	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
-
-	"golang.org/x/net/html"
 )
-
-func extractLinks(body io.Reader, currentUrl string, baseUrl *url.URL) []string {
-	var links []string
-	z := html.NewTokenizer(body)
-	for {
-		tt := z.Next()
-		switch tt {
-		case html.ErrorToken:
-			return links
-		case html.StartTagToken, html.SelfClosingTagToken:
-			t := z.Token()
-			var attrKey string
-			switch t.Data {
-			case "a", "link":
-				attrKey = "href"
-			case "img", "script", "video", "audio", "source":
-				attrKey = "src"
-			default:
-				continue
-			}
-
-			for _, a := range t.Attr {
-				if a.Key == attrKey {
-					u, err := url.Parse(a.Val)
-					if err != nil {
-						continue
-					}
-					resolved := baseUrl.ResolveReference(u)
-					if resolved.Host == baseUrl.Host {
-						resolved.Fragment = ""
-						links = append(links, resolved.String())
-					}
-				}
-			}
-		}
-	}
-}
 
 func (m model) exportToCSV() (string, error) {
 	if m.baseUrl == nil {
