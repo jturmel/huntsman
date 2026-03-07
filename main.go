@@ -33,6 +33,8 @@ import (
 )
 
 var (
+	version = "0.0.9"
+
 	focusedStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder())
 	blurredStyle = lipgloss.NewStyle().
@@ -112,6 +114,14 @@ func initialModel() model {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if err := runMCPServer(); err != nil {
+			fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)

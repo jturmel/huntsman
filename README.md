@@ -48,6 +48,64 @@ Usage
     - Press **Enter** on a highlighted row to open the URL in your default browser.
     - Press **q** to quit.
 
+MCP Server
+----------
+
+Huntsman can run as a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server, allowing AI agents and LLM-powered tools (such as Gemini CLI or Claude Desktop) to crawl websites programmatically.
+
+### Starting the MCP Server
+
+```bash
+huntsman mcp
+```
+
+This starts an MCP server listening on **stdio**, compatible with any MCP client that supports the stdio transport.
+
+### Available Tool: `crawl_site`
+
+| Parameter   | Type    | Required | Default | Description                                               |
+|-------------|---------|----------|---------|-----------------------------------------------------------|
+| `url`       | string  | ✓        | —       | The starting URL to crawl (e.g. `https://example.com`).   |
+| `max_depth` | integer |          | `3`     | Maximum crawl depth from the starting URL.                |
+| `max_pages` | integer |          | `50`    | Maximum number of pages to collect.                       |
+| `headless`  | boolean |          | `false` | Use a headless browser for JavaScript-rendered pages.     |
+
+The tool returns only HTML document resources (images, scripts, and stylesheets are filtered out) as a Markdown list, making it easy for an LLM to reason about site structure.
+
+### Configuring with Gemini CLI
+
+Add the following to your Gemini CLI MCP configuration (usually `~/.gemini/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "huntsman": {
+      "command": "huntsman",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Once configured, you can ask Gemini to crawl a site:
+
+> "Use huntsman to crawl https://example.com and list all the pages you find."
+
+### Configuring with Claude Desktop
+
+Add the following to your Claude Desktop configuration (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "huntsman": {
+      "command": "huntsman",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
 Configuration
 -------------
 
