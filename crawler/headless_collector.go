@@ -37,7 +37,7 @@ func (c *HeadlessCollector) Collect(ctx context.Context, targetURL string) (*Res
 			defer resp.Body.Close()
 			size = resp.ContentLength
 			status = fmt.Sprintf("%d", resp.StatusCode)
-			
+
 			ctype := resp.Header.Get("Content-Type")
 			kind := DetermineKind(ctype)
 			// If it's a known non-document type, return immediately as static resource

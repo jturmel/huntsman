@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -11,6 +12,10 @@ import (
 )
 
 func TestHeadlessCollector_Collect(t *testing.T) {
+	if _, err := exec.LookPath("google-chrome"); err != nil {
+		t.Skipf("google-chrome is required for headless collector integration test: %v", err)
+	}
+
 	// Setup test server with JS
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -45,7 +50,7 @@ func TestHeadlessCollector_Collect(t *testing.T) {
 
 	found := false
 	expectedLink := ts.URL + "/dynamic"
-	
+
 	for _, link := range resource.Links {
 		if link == expectedLink {
 			found = true
